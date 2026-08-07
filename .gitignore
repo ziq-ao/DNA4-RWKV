@@ -1,0 +1,31 @@
+# Local data and generated archives
+data/*
+out/
+logs/
+pids/
+*.dna4/
+*.zip
+ARCHIVE_SHA256SUMS
+
+# Model and compressed artifacts
+*.pth
+*.bin
+*.ac
+*.meta
+*.pt
+
+# Locally compiled binaries and build/cache output
+preprocess
+!preprocess
+__pycache__/
+*.py[cod]
+.vscode/
+.pytest_cache/
+build/
+dist/
+*.egg-info/
+
+# Local environment and editor files
+.env
+.idea/
+*.swp

@@ -1,0 +1,7 @@
+torch>=2.0
+pytorch-lightning
+deepspeed
+bitsandbytes
+scipy
+numpy
+tqdm
