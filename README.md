@@ -1,167 +1,125 @@
 # DNA-4: Neural Data Compression with RWKV-7
 
-**DNA-4** (Deep Neural Arithmetic coding, 4th generation) 是一个基于 **RWKV-7** 语言模型的端到端神经网络数据压缩系统。它利用经过训练的语言模型对 token 序列进行自适应熵编码，并结合 NF4 量化、种子正交旋转优化和算术编码（Arithmetic Coding），实现高压缩比的无损数据压缩。
+DNA-4 is an end-to-end neural data compressor based on an RWKV-7 recurrent language model. It converts an input file into dictionary tokens, predicts the token stream with a trained model, and uses arithmetic coding for lossless compression. The stored model prior uses seeded orthogonal rotations and 4-bit NF4 quantization.
 
-> 本项目基于 [RWKV-LM](https://github.com/BlinkDL/RWKV-LM) 框架开发，并集成了 [NNCP](https://github.com/fabricebellard/nncp) 风格的字典预处理。
+The project is based on [RWKV-LM](https://github.com/BlinkDL/RWKV-LM) and includes a standalone NNCP-style dictionary preprocessor derived from [NNCP](https://github.com/fabricebellard/nncp).
 
----
+## Features
 
-## 📌 核心特性
+- RWKV-7 neural prediction with streaming arithmetic coding
+- Seeded orthogonal rotation and 4-bit NF4 model quantization
+- Synchronized online adaptation during compression and decompression
+- NNCP-style dictionary preprocessing for byte streams
+- A complete CLI pipeline for model decoding, token decoding, and raw-file restoration
+- CUDA kernels for RWKV-7 training and inference
 
-- **端到端神经网络压缩**：训练 RWKV-7 语言模型预测 token 分布，通过算术编码实现近熵率无损压缩
-- **NF4 量化 + 种子正交旋转**：模型权重经旋转优化后量化为 4-bit，显著减小模型存储体积
-- **自适应在线微调**：压缩时对模型进行在线 fine-tuning，提升长序列的预测精度
-- **算术编码流式处理**：C++ 实现的高性能流式算术编码器，支持无限追加编码与解码
-- **NNCP 字典预处理**：基于 Fabrice Bellard 的 NNCP 预处理器进行字典编码，进一步降低熵率
-- **CLI 压缩/解压工具链**：CLI 编解码 token 流；字节级恢复由随附的 `preprocess` 工具完成
+## Repository Layout
 
----
-
-## 🏗️ 项目结构
-
-```
+```text
 .
-├── train.py                    # 模型训练入口（PyTorch Lightning）
-├── dna4_cli.py                 # 压缩 / 解压缩 CLI 工具
-├── preprocess                  # 已编译的 NNCP 字典预处理器
-├── preprocess.c                # 预处理器源码；二进制不兼容时用于重新编译
-├── demo-training-prepare.sh    # 初始化模型权重脚本
-├── demo-training-run.sh        # 启动训练脚本
-│
+├── train.py                    # RWKV-7 training entry point
+├── dna4_cli.py                 # Compression and decompression CLI
+├── preprocess                  # Prebuilt NNCP-style preprocessor
+├── preprocess.c                # Preprocessor source for rebuilding the binary
+├── demo-training-prepare.sh    # Create the initial model weights
+├── demo-training-run.sh        # Train the RWKV-7 prior
+├── requirements.txt            # Python dependencies
 ├── src/
-│   ├── training/
-│   │   ├── model.py            # RWKV-7 训练模型定义（x070 架构）
-│   │   └── cuda/
-│   │       ├── wkv7_cuda.cu    # WKV7 CUDA 前向/反向内核
-│   │       └── wkv7_op.cpp     # CUDA 算子注册
-│   │
-│   ├── inference/
-│   │   ├── batch_inf.py        # RWKV-7 批量推理引擎（含 CUDA 加速）
-│   │   └── cuda/
-│   │       ├── rwkv7_fast_ops_bf16.cpp/.cu   # 推理快速算子
-│   │       └── rwkv7_wkv_fp32_v2.cpp/.cu     # WKV 推理内核
-│   │
-│   ├── AC/                     # 算术编码器（C++ / PyTorch JIT 扩展）
-│   │   ├── ac_wrapper_torch.cpp     # PyBind11 流式编码/解码绑定
-│   │   ├── ArithmeticCoder.cpp/.hpp # 算术编码核心实现
-│   │   └── BitIoStream.cpp/.hpp     # 位 I/O 流
-│   │
-│   ├── model_codec.py          # 模型 NF4 量化压缩 / 解压
-│   ├── nf4_rotation_optimizer.py   # 正交旋转种子搜索
-│   ├── dna4_engine.py          # DNA-4 核心压缩/解压引擎
-│   ├── dataset.py              # 训练数据集加载
-│   ├── binidx.py               # MMap 索引数据集读取
-│   └── trainer.py              # 训练回调 & 权重初始化
-│
-├── data/                       # 原始文件与预处理后的 token 文件（本地生成）
-├── enwik9.dna4/                # enwik9 压缩归档
-│   ├── dna4_compressed_model.ac    # 量化模型权重（算术编码）
-│   ├── dna4_compressed_model.meta  # 模型元信息
-│   ├── dna4_stream.ac              # 数据流（算术编码）
-│   ├── nncp.dict                   # 字典文件
-│   └── rotation_seeds.pt           # 旋转种子
-│
-├── out/                        # 训练输出（模型检查点）
-└── logs/                       # 训练/压缩日志（非解压必需）
+│   ├── AC/                     # C++ arithmetic coder and PyTorch bindings
+│   ├── inference/              # RWKV-7 inference implementation and CUDA kernels
+│   ├── training/               # RWKV-7 training model and CUDA kernels
+│   ├── dna4_engine.py          # Adaptive coding engine
+│   ├── model_codec.py          # NF4 model codec
+│   └── nf4_rotation_optimizer.py
+├── data/                       # Local input and token files; ignored by Git
+├── out/                        # Local checkpoints; ignored by Git
+├── logs/                       # Local logs; ignored by Git
+└── enwik9.dna4/                # Local compressed archive; ignored by Git
 ```
 
----
+The repository intentionally does not track raw data, token files, model checkpoints, compressed archives, logs, caches, or other generated files. The prebuilt `preprocess` executable is tracked; `preprocess.c` is provided as a fallback for systems on which that binary cannot run.
 
-## 🔧 环境依赖
+## Requirements
 
-### 硬件要求
+The compression and inference pipeline requires an NVIDIA GPU and a CUDA toolchain for the first-run JIT compilation. Training additionally uses PyTorch Lightning and DeepSpeed.
 
-- **GPU**：NVIDIA GPU（推荐 CUDA Compute Capability ≥ 7.0，即 V100 / A100 / RTX 30xx 及以上）
-- **内存**：≥ 16 GB（训练时视模型大小和 batch size 而定）
-- **CUDA**：需安装 CUDA Toolkit（用于 JIT 编译 CUDA 内核）
-
-### 软件依赖
-
-| 依赖 | 用途 |
-|------|------|
-| Python ≥ 3.8 | 运行环境 |
-| PyTorch ≥ 2.0 | 深度学习框架 |
-| PyTorch Lightning | 训练框架 |
-| DeepSpeed | 训练脚本使用的优化器 |
-| bitsandbytes | NF4 量化 |
-| SciPy | 正交旋转生成 |
-| NumPy | 数值计算 |
-| tqdm | 旋转种子搜索进度显示 |
-| GCC | 编译 C 预处理器 & CUDA JIT |
-
-安装 Python 依赖：
+Install the Python dependencies with:
 
 ```bash
 pip install -r requirements.txt
 ```
 
----
+The tested model configuration is RWKV-7 x070 with 5 layers, embedding size 512, vocabulary size 16,384, context length 2,048, and head size 64.
 
-## 🚀 快速开始
+## 1. Prepare the Preprocessor
 
-### 第 1 步：准备 NNCP 预处理器
-
-release 附带可直接执行的 `preprocess`。先确认当前设备可以运行它：
+The release includes an executable `preprocess`. Try it first:
 
 ```bash
 ./preprocess -h
 ```
 
-若因系统架构、动态链接库或可执行格式不兼容而无法运行，再使用随附源码重新编译：
+If the binary is incompatible with the target operating system or CPU architecture, rebuild it from the included source:
 
 ```bash
 gcc -O3 -Wall -DCONFIG_STANDALONE preprocess.c -o preprocess -lm
 ```
 
-### 第 2 步：准备数据
+## 2. Tokenize the Input
 
-将原始文本数据通过 NNCP 预处理器转换为 token 序列：
+The DNA-4 CLI consumes the preprocessed token file, not the original raw file. Create the dictionary and token stream with:
 
 ```bash
-# 编码：构建字典 + 将文本转换为 token
-./preprocess c <dict_file> <input_file> <output_file> <n_words> <min_freq>
-
-# 示例：enwik9
+mkdir -p data enwik9.dna4
 ./preprocess c enwik9.dna4/nncp.dict enwik9 data/enwik9_tokens.bin 16384 512
-
 ```
 
-解码（恢复原始文本）：
+The command creates:
+
+- `enwik9.dna4/nncp.dict`: the dictionary required for final restoration
+- `data/enwik9_tokens.bin`: the big-endian 16-bit token stream used by training and compression
+
+The generic command form is:
 
 ```bash
-./preprocess d <dict_file> <input_file> <output_file>
-./preprocess d data/my_dict.bin data/enwik9_tokens.bin enwik9_restored
+./preprocess c <dictionary> <input> <token_output> <n_words> <min_freq>
 ```
 
-### 第 3 步：训练 RWKV-7 模型
+## 3. Train the RWKV-7 Prior
 
-**3a. 初始化模型权重：**
+Create the initial weights:
 
 ```bash
 bash demo-training-prepare.sh
 ```
 
-此脚本会根据配置生成 `rwkv-init.pth` 到输出目录。随附脚本的默认配置为：
-- `N_LAYER`：5
-- `N_EMBD`：512
-- `CTX_LEN`：上下文长度（默认 2048）
-- `VOCAB_SIZE`：16,384
+This creates:
 
-**3b. 启动训练：**
+```text
+out/L5-D512-CTXLEN2048-TIE1-NNCPDATA1-x070/rwkv-init.pth
+```
+
+Train the prior:
 
 ```bash
 bash demo-training-run.sh
 ```
 
-可在脚本中调整：
-- `M_BSZ`：micro batch size（默认 24，减小以省显存）
-- `LR_INIT` / `LR_FINAL`：学习率
-- `GRAD_CP`：梯度检查点（1 = 省显存但慢，0 = 快但费显存）
-- `EPOCH_SAVE`：每多少 epoch 保存检查点
+Training checkpoints and logs are written to the same project directory:
 
-训练完成后，模型检查点保存在 `out/` 目录下。
+```text
+out/L5-D512-CTXLEN2048-TIE1-NNCPDATA1-x070/
+├── rwkv-init.pth
+├── rwkv-0.pth, rwkv-20.pth, ...
+├── rwkv-final.pth
+└── train_log.txt
+```
 
-### 第 4 步：压缩数据
+The training script uses the 5-layer, 512-dimensional configuration. It is intended to be edited for a different dataset, model size, or hardware setup.
+
+## 4. Compress
+
+Run compression using a preprocessed token file and a trained checkpoint:
 
 ```bash
 python dna4_cli.py compress \
@@ -172,22 +130,30 @@ python dna4_cli.py compress \
     --device cuda
 ```
 
-压缩参数说明：
-| 参数 | 说明 | 默认值 |
-|------|------|--------|
-| `--input_file` | 预处理后的 token 文件 (.bin) | 必填 |
-| `--model_path` | 训练好的 RWKV 模型路径 (.pth) | 必填 |
-| `--archive_dir` | 压缩输出目录 | `enwik9.dna4` |
-| `--seed_trials` | 正交旋转种子搜索次数 | 20 |
-| `--n_layer` | 模型层数 | 5 |
-| `--n_embd` | 嵌入维度 | 512 |
-| `--vocab_size` | 词表大小 | 16384 |
-| `--batch_size_inf` | 推理 batch size | 4096 |
-| `--chunk_size` | 分块大小 | 512 |
+The compression pipeline performs the following steps:
 
-> 压缩时会自动执行：旋转种子优化 → 模型 NF4 量化 → 在线微调推理 → 算术编码输出
+1. Reuses the dictionary in `archive_dir`.
+2. Searches rotation seeds for eligible model tensors.
+3. Quantizes and arithmetic-codes the model weights.
+4. Reloads the quantized model so encoder and decoder start from the same state.
+5. Runs synchronized adaptive prediction and arithmetic-codes the token stream.
 
-### 第 5 步：解压数据
+The archive directory receives:
+
+```text
+enwik9.dna4/
+├── nncp.dict
+├── rotation_seeds.pt
+├── dna4_compressed_model.ac
+├── dna4_compressed_model.meta
+└── dna4_stream.ac
+```
+
+Existing rotation seeds and model codec files are reused by default. Use `--force_rotation` or `--force_model_codec` to regenerate them.
+
+## 5. Decompress and Restore the Raw File
+
+The default output locations are under `data/`:
 
 ```bash
 python dna4_cli.py decompress \
@@ -196,122 +162,71 @@ python dna4_cli.py decompress \
     --device cuda
 ```
 
-解压参数说明：
-| 参数 | 说明 | 默认值 |
-|------|------|--------|
-| `--archive_dir` | 压缩包目录 | `enwik9.dna4` |
-| `--output_file` | 恢复的 token 文件路径 | `data/enwik9_restored.bin` |
-| `--raw_output_file` | 恢复的原始字节文件路径 | 默认移除 `--output_file` 的 `.bin` 后缀 |
-| `--preprocess_bin` | 已编译的 `preprocess` 可执行文件路径 | release 根目录的 `preprocess`，其次为 `PATH` |
-| `--total_tokens` | 原始 token 总数（必须精确匹配） | 200608961 |
-| `--verify` | 解压时验证模型一致性 | False |
-| `--model_path` | 原始模型路径（仅验证时需要） | — |
+The CLI first decodes the token stream and then automatically runs `preprocess d`. It creates:
 
-解压命令会自动调用 `preprocess d` 完成原始字节恢复；`--output_file` 保留 token 流，`--raw_output_file` 指定最终文件。
+```text
+data/enwik9_restored.bin  # decoded token stream
+data/enwik9_restored      # restored raw file
+```
 
-### 跨设备解压验证
-
-`DNA_RWKV_release_v1_decoder_verification.zip` 是精简的解压验证包，不含原始数据、训练检查点、日志和训练入口。解压后，在包根目录执行：
+To choose different paths:
 
 ```bash
-pip install -r requirements.txt
-./preprocess -h
-sha256sum -c ARCHIVE_SHA256SUMS
-python dna4_cli.py decompress --archive_dir enwik9.dna4 --total_tokens 200608961 --device cuda
-sha256sum data/enwik9_restored
+python dna4_cli.py decompress \
+    --archive_dir enwik9.dna4 \
+    --output_file data/restored_tokens.bin \
+    --raw_output_file data/restored.raw \
+    --total_tokens 200608961 \
+    --device cuda
 ```
 
-如果 `./preprocess -h` 无法执行，使用 `gcc -O3 -Wall -DCONFIG_STANDALONE preprocess.c -o preprocess -lm` 重建后再继续。首次运行会为本机编译 CUDA 与算术编码扩展。预期的最终字节文件 SHA-256 为 `159b85351e5f76e60cbe32e04c677847a9ecba3adc79addab6f4c6c7aa3744bc`。
+If the preprocessor is not in the project root or on `PATH`, specify it explicitly:
 
----
-
-## 🧠 技术原理
-
-### 压缩流程
-
-```
-原始文本 → NNCP字典编码 → token序列 → RWKV-7预测概率分布 → 算术编码 → 压缩流
-                                      ↑
-                               模型NF4量化 + 在线微调
+```bash
+python dna4_cli.py decompress \
+    --archive_dir enwik9.dna4 \
+    --preprocess_bin ./preprocess \
+    --total_tokens 200608961 \
+    --device cuda
 ```
 
-1. **NNCP 字典预处理**：基于频率的字典构建算法，将常见词组编码为单个 token，降低序列熵率
-2. **RWKV-7 语言模型**：基于线性注意力机制的 RNN 架构，在训练和推理中均具有 O(T) 复杂度，适合长序列建模
-3. **NF4 量化 + 种子正交旋转**：
-   - 通过搜索最优旋转种子，最小化权重矩阵的峰度（kurtosis），使量化误差更均匀
-   - 旋转后的权重使用 4-bit NormalFloat 量化，配合算术编码进一步压缩
-4. **自适应在线微调**：在压缩过程中，对量化后的模型在当前数据块上进行微调训练，提升预测精度
-5. **算术编码**：将模型输出的概率分布转换为二进制位流，实现近熵率编码
+`--total_tokens` must exactly match the number of tokens in the compressed input. A mismatch changes the lane layout and prevents correct recovery.
 
-### 解压流程
+## Generated Files
 
-```
-压缩流 → 算术解码 → token序列 → NNCP字典解码 → 原始文本
-            ↑
-     量化模型反量化恢复
-```
+During normal use, files are generated in these locations:
 
-解压是压缩的精确逆过程，保证无损恢复。
+| Path | Purpose |
+|---|---|
+| `data/` | Raw input, tokenized input, decoded tokens, and restored raw output |
+| `out/<project>/` | Initial weights and training checkpoints |
+| `<archive>.dna4/` | Dictionary, model payload, rotation seeds, and coded data stream |
+| `logs/batch_inf/` | Compression and decompression logs |
+| PyTorch extension cache | JIT-built CUDA and arithmetic-coder extensions |
 
-### 压缩归档结构
+All of these generated project files are ignored by Git. Only source code, scripts, documentation, dependency metadata, and the prebuilt preprocessor are tracked.
 
-一个 `.dna4` 归档目录包含：
+## Implementation Overview
 
-| 文件 | 说明 |
-|------|------|
-| `dna4_compressed_model.ac` | NF4 量化后的模型权重（算术编码） |
-| `dna4_compressed_model.meta` | 模型元信息（pickle 格式：量化状态、旋转种子等） |
-| `dna4_stream.ac` | 数据流的算术编码输出 |
-| `nncp.dict` | NNCP 字典文件 |
-| `rotation_seeds.pt` | 正交旋转种子配置（种子也写入模型元数据） |
+The stored prior is built from an offline-trained RWKV-7 model. Eligible large tensors are transformed with seeded orthogonal rotations and quantized blockwise to NF4. Small or sensitive tensors are retained without NF4 quantization. The resulting model indices are arithmetic-coded together with the quantization metadata.
 
----
+During data coding, the quantized model is restored in BF16. The token stream is arranged into parallel lanes and processed in chunks. The current model distribution is converted to integer cumulative frequencies for the arithmetic coder. After each coding window, encoder and decoder apply the same online update to the same known token window, so no adapted weights need to be transmitted.
 
-## ⚙️ 模型架构 (RWKV-7 x070)
+The final token stream is converted back to the original byte stream using the retained dictionary.
 
-本项目使用 **RWKV-7** (代号 x070) 架构，核心组件：
+## Notes
 
-- **RWKV_Tmix_x070**：时间混合层，包含 LoRA 风格的 decay/gate/AAA 模块、value residual、GroupNorm
-- **RWKV_CMix_x070**：通道混合层（FFN），使用 ReLU² 激活函数
-- **WindBackstepping**：自定义 CUDA 内核，实现 WKV7 的高效前向/反向传播
-- **权重绑定**：可选的 embedding ↔ head 权重共享
+- The first execution JIT-compiles CUDA and arithmetic-coder extensions and may take several minutes.
+- Reduce the training micro-batch or inference batch size if GPU memory is insufficient.
+- Training scripts are examples for the included enwik9 configuration and may need path, environment, and hardware edits on another machine.
+- The current implementation targets CUDA execution and is not a CPU-only Hutter Prize submission.
 
-已验证的模型配置：
+## License and Acknowledgements
 
-| 配置 | 层数 | 维度 | 词表大小 | 上下文长度 |
-|------|------|------|----------|------------|
-| 小模型 | 2 | 256 | 4096 | 2048 |
-| 中模型 | 3 | 256 | 4096 | 2048 |
-| 中大模型 | 4 | 128 | — | 2048 |
-| 大模型 | 5 | 512 | 16384 | 2048 |
+The project follows the RWKV-LM project license. The NNCP preprocessor source is Copyright (c) 2018--2021 Fabrice Bellard and follows its original license.
 
----
+This project builds on:
 
-## 📊 性能参考
-
-压缩日志保存在 `logs/batch_inf/` 目录，记录了压缩过程中的 BPC (bits per character) 和预估压缩大小。
-
----
-
-## 📝 注意事项
-
-1. **`--total_tokens` 必须精确**：解压时必须提供与原始文件完全一致的 token 总数，否则解码结果会错位
-2. **`magic_prime` 计算**：训练时需计算 `magic_prime`（最大的满足 3n+2 且小于 `datalen/ctxlen-1` 的素数），可用 [dcode.fr](https://www.dcode.fr/prime-numbers-search) 辅助计算
-3. **显存管理**：减小 `--micro_bsz` / `--batch_size_inf`、开启 `--grad_cp` 可降低显存占用
-4. **检查点恢复**：训练器自动加载输出目录中最新的 `rwkv-*.pth`，支持断点续训
-5. **CUDA JIT 编译**：首次运行时会自动编译 CUDA 内核和算术编码器，可能需要几分钟
-
----
-
-## 📄 许可证
-
-- **项目代码**：遵循 RWKV-LM 项目许可证
-- **NNCP 预处理器** (`preprocess.c`)：Copyright (c) 2018-2021 Fabrice Bellard，遵循其原始许可证
-
----
-
-## 🙏 致谢
-
-- [RWKV-LM](https://github.com/BlinkDL/RWKV-LM) — RWKV 语言模型框架
-- [NNCP](https://github.com/fabricebellard/nncp) — Fabrice Bellard 的神经网络数据压缩
-- [bitsandbytes](https://github.com/TimDettmers/bitsandbytes) — NF4 量化实现
+- [RWKV-LM](https://github.com/BlinkDL/RWKV-LM)
+- [NNCP](https://github.com/fabricebellard/nncp)
+- [bitsandbytes](https://github.com/bitsandbytes-foundation/bitsandbytes)
