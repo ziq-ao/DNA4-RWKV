@@ -29,6 +29,7 @@ NNCP_DATA=1
 PRECISION="bf16"
 HEAD_SIZE=64
 MAGIC_PRIME=2926181
+RANDOM_SEED=1024
 
 PROJ_DIR="out/L${N_LAYER}-D${N_EMBD}-CTXLEN${CTX_LEN}-TIE${WEIGHT_TYING}-NNCPDATA${NNCP_DATA}-${MODEL_TYPE}"
 DATA_FILE="data/${DATA}_tokens.bin"
@@ -38,6 +39,7 @@ echo "Writing init prior to: ${PROJ_DIR}/rwkv-init.pth"
 
 python train.py --wandb "" --proj_dir "${PROJ_DIR}" \
   --data_file "${DATA_FILE}" --data_type "binidx" --vocab_size "${VOCAB_SIZE}" --my_testing "${MODEL_TYPE}" \
+  --random_seed "${RANDOM_SEED}" \
   --ctx_len "${CTX_LEN}" --train_stage 1 --epoch_count 1 --epoch_begin 0 \
   --epoch_save 1 --weight_decay 0 --head_size "${HEAD_SIZE}" --weight_tying "${WEIGHT_TYING}" --nncp_data "${NNCP_DATA}" \
   --num_nodes 1 --micro_bsz 1 --n_layer "${N_LAYER}" --n_embd "${N_EMBD}" --my_exit_tokens 1498226207 --magic_prime "${MAGIC_PRIME}" \
