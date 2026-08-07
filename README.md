@@ -1,6 +1,6 @@
 # DNA-4: Neural Data Compression with RWKV-7
 
-DNA-4 is an end-to-end neural data compressor based on an RWKV-7 recurrent language model. It converts an input file into dictionary tokens, predicts the token stream with a trained model, and uses arithmetic coding for lossless compression. The stored model prior uses seeded orthogonal rotations and 4-bit NF4 quantization.
+DNA-4, short for **Dynamical Neural Adaptation from a 4-bit Prior**, is an end-to-end neural data compressor based on an RWKV-7 recurrent language model. It converts an input file into dictionary tokens, predicts the token stream with a trained model, and uses arithmetic coding for lossless compression. The stored model prior uses seeded orthogonal rotations and 4-bit NF4 quantization.
 
 The project is based on [RWKV-LM](https://github.com/BlinkDL/RWKV-LM) and includes a standalone NNCP-style dictionary preprocessor derived from [NNCP](https://github.com/fabricebellard/nncp).
 
