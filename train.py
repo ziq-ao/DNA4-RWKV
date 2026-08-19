@@ -70,9 +70,20 @@ if __name__ == "__main__":
         import deepspeed
     from pytorch_lightning import seed_everything
 
+    def enforce_determinism(seed=1024):
+        torch.manual_seed(seed)
+        np.random.seed(seed)
+        torch.use_deterministic_algorithms(True, warn_only=True)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+        torch.backends.cudnn.allow_tf32 = False
+        torch.backends.cuda.matmul.allow_tf32 = False
+
     if args.random_seed >= 0:
         print(f"########## WARNING: GLOBAL SEED {args.random_seed} THIS WILL AFFECT MULTIGPU SAMPLING ##########\n" * 3)
         seed_everything(args.random_seed)
+        enforce_determinism(args.random_seed)
+        print("########## Deterministic PyTorch execution enabled ##########")
 
     np.set_printoptions(precision=4, suppress=True, linewidth=200)
     warnings.filterwarnings("ignore", ".*Consider increasing the value of the `num_workers` argument*")
@@ -178,14 +189,15 @@ if __name__ == "__main__":
     if "deepspeed_stage_3" in args.strategy:
         os.environ["RWKV_JIT_ON"] = "0" # somehow incompatible
 
-    torch.backends.cudnn.benchmark = True
     torch.backends.cudnn.enabled = True
-    if args.precision == "fp32":
-        torch.backends.cudnn.allow_tf32 = False
-        torch.backends.cuda.matmul.allow_tf32 = False
-    else:
-        torch.backends.cudnn.allow_tf32 = True
-        torch.backends.cuda.matmul.allow_tf32 = True
+    if args.random_seed < 0:
+        torch.backends.cudnn.benchmark = True
+        if args.precision == "fp32":
+            torch.backends.cudnn.allow_tf32 = False
+            torch.backends.cuda.matmul.allow_tf32 = False
+        else:
+            torch.backends.cudnn.allow_tf32 = True
+            torch.backends.cuda.matmul.allow_tf32 = True
 
     if "32" in args.precision:
         args.precision = 32
