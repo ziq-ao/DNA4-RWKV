@@ -79,7 +79,7 @@ load_extensions(WKV_MODE)
 
 class RWKV7:
     def __init__(self, z) -> None:
-        torch.set_float32_matmul_precision("high")
+        torch.set_float32_matmul_precision("highest")
         torch._C._jit_set_autocast_mode(False)
 
         self.H, self.N = z["blocks.0.att.r_k"].shape
