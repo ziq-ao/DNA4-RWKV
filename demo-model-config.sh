@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+# Shared model and data configuration for the demo scripts.
+MODEL_TYPE="x070"
+DATA="enwik9"
+VOCAB_SIZE=16384
+N_LAYER=5
+N_EMBD=512
+CTX_LEN=2048
+WEIGHT_TYING=1
+NNCP_DATA=1
+PRECISION="bf16"
+HEAD_SIZE=64
+MAGIC_PRIME=2926181
+
+PROJ_DIR="out/L${N_LAYER}-D${N_EMBD}-CTXLEN${CTX_LEN}-TIE${WEIGHT_TYING}-NNCPDATA${NNCP_DATA}-${MODEL_TYPE}"
+DATA_FILE="data/${DATA}_tokens.bin"

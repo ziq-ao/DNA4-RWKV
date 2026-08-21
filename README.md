@@ -23,6 +23,8 @@ The project is based on [RWKV-LM](https://github.com/BlinkDL/RWKV-LM) and includ
 ├── preprocess.c                # Preprocessor source for rebuilding the binary
 ├── demo-training-prepare.sh    # Create the initial model weights
 ├── demo-training-run.sh        # Train the RWKV-7 prior
+├── demo-dna4.sh                # Compress with a trained prior
+├── demo-model-config.sh        # Shared enwik9 model configuration
 ├── requirements.txt            # Python dependencies
 ├── src/
 │   ├── AC/                     # C++ arithmetic coder and PyTorch bindings
@@ -43,11 +45,78 @@ The repository intentionally does not track raw data, token files, model checkpo
 
 The compression and inference pipeline requires an NVIDIA GPU and a CUDA toolchain for the first-run JIT compilation. Training additionally uses PyTorch Lightning and DeepSpeed.
 
-Install the Python dependencies with:
+The demo scripts do not create or activate a Python environment. Create one
+with your preferred environment manager, activate it in the current shell, and
+then run the scripts from the repository root. For example, with Conda:
 
 ```bash
-pip install -r requirements.txt
+conda create -n dna-rwkv python=3.12.1 -y
+conda activate dna-rwkv
+
+python -m pip install --upgrade pip
+python -m pip install --index-url https://download.pytorch.org/whl/cu126 torch==2.7.0
+python -m pip install \
+    pytorch-lightning==1.9.5 \
+    deepspeed==0.18.4 \
+    bitsandbytes==0.49.0 \
+    scipy==1.13.1 \
+    numpy==1.26.4 \
+    ninja==1.11.1.1 \
+    tqdm
 ```
+
+`dna-rwkv` is only an example environment name; choose any name appropriate to
+your machine. The important requirement is that the intended environment is
+already active before invoking a demo script.
+
+### Validated Reproduction Environment
+
+The included demo scripts verify Python and PyTorch at startup. Their supported
+reproduction environment is:
+
+| Component | Version |
+|---|---|
+| Operating system | Linux |
+| Python | 3.12.1 |
+| PyTorch | 2.7.0+cu126 |
+| PyTorch Lightning | 1.9.5 |
+| DeepSpeed | 0.18.4 |
+| bitsandbytes | 0.49.0 |
+| SciPy | 1.13.1 |
+| NumPy | 1.26.4 |
+| Ninja | 1.11.1.1 |
+
+Check the active environment before running a demo:
+
+```bash
+python - <<'PY'
+import sys
+import torch
+
+print(sys.executable)
+print(sys.version)
+print(torch.__version__)
+assert sys.version_info[:3] == (3, 12, 1)
+assert torch.__version__ == "2.7.0+cu126"
+PY
+```
+
+`requirements.txt` lists the broad runtime dependencies, but it does not pin a
+reproducible CUDA/PyTorch stack. Use the commands above for the demo
+configuration. Record the exact source revision with `git rev-parse HEAD` when
+comparing results.
+
+An identical GPU model is not required for training, compression,
+decompression, or lossless restoration. However, GPU architecture, CUDA,
+driver, PyTorch, and DeepSpeed versions can change floating-point evaluation
+and cause training trajectories or compressed archive bytes to diverge.
+
+Stage I initialization runs on CPU with its own fixed seed. Stage III training
+uses a separate fixed seed and deterministic settings. To compare exact
+checkpoints, also match the CPU software stack, GPU model, driver, and PyTorch
+version; cross-hardware bitwise identity is not guaranteed.
+
+Lossless recovery is a separate property: a valid archive must restore the original input exactly on any supported compatible system, even when its generated archive bytes differ from an archive produced elsewhere.
 
 The tested model configuration is RWKV-7 x070 with 5 layers, embedding size 512, vocabulary size 16,384, context length 2,048, and head size 64.
 
@@ -87,6 +156,10 @@ The generic command form is:
 
 ## 3. Train the RWKV-7 Prior
 
+Ensure the environment described above is active, and run these commands from
+the repository root. Model and data settings shared by all demos are in
+`demo-model-config.sh`.
+
 Create the initial weights:
 
 ```bash
@@ -105,6 +178,11 @@ Train the prior:
 bash demo-training-run.sh
 ```
 
+`train.py` automatically resumes the highest numbered `rwkv-*.pth` in the
+project directory during Stage III. To begin a fresh run from `rwkv-init.pth`,
+use a project directory containing only that initial checkpoint; preserve any
+older checkpoints elsewhere rather than deleting them.
+
 Training checkpoints and logs are written to the same project directory:
 
 ```text
@@ -119,7 +197,18 @@ The training script uses the 5-layer, 512-dimensional configuration. It is inten
 
 ## 4. Compress
 
-Run compression using a preprocessed token file and a trained checkpoint:
+After training the checkpoint selected by `MODEL_PATH` in `demo-dna4.sh`, run:
+
+```bash
+bash demo-dna4.sh
+```
+
+The demo uses the shared `PROJ_DIR` configuration, expects the dictionary at
+`enwik9.dna4/nncp.dict`, and currently selects `rwkv-200.pth`. Change
+`MODEL_PATH`, `ARCHIVE_DIR`, or `SEED_TRIALS` in `demo-dna4.sh` deliberately if
+your trained checkpoint or archive name differs.
+
+The equivalent direct CLI invocation is:
 
 ```bash
 python dna4_cli.py compress \
@@ -127,6 +216,7 @@ python dna4_cli.py compress \
     --model_path out/L5-D512-CTXLEN2048-TIE1-NNCPDATA1-x070/rwkv-200.pth \
     --archive_dir enwik9.dna4 \
     --seed_trials 100 \
+    --weight_tying 1 \
     --device cuda
 ```
 
@@ -218,7 +308,11 @@ The final token stream is converted back to the original byte stream using the r
 
 - The first execution JIT-compiles CUDA and arithmetic-coder extensions and may take several minutes.
 - Reduce the training micro-batch or inference batch size if GPU memory is insufficient.
-- Training scripts are examples for the included enwik9 configuration and may need path, environment, and hardware edits on another machine.
+- Activate the required Python environment yourself before running any demo;
+  the scripts intentionally do not assume a Conda installation path or an
+  environment name.
+- Change the shared model/data settings in `demo-model-config.sh`; keep
+  training and compression-specific settings in their respective demo scripts.
 - The current implementation targets CUDA execution and is not a CPU-only Hutter Prize submission.
 
 ## License and Acknowledgements

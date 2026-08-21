@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -eo pipefail
 
 #######################################################################################################################
 #
@@ -13,26 +13,27 @@ set -euo pipefail
 #
 #######################################################################################################################
 
-source /home/aoziqiao/miniconda3/etc/profile.d/conda.sh
-conda activate llm
+# Activate the required Python environment before running this script.
+set -u
 
-export CUDA_VISIBLE_DEVICES=0
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+source "${ROOT}/demo-model-config.sh"
 
-MODEL_TYPE="x070"
-DATA="enwik9"
-VOCAB_SIZE=16384
-N_LAYER=5
-N_EMBD=512
-CTX_LEN=2048
-WEIGHT_TYING=1
-NNCP_DATA=1
-PRECISION="bf16"
-HEAD_SIZE=64
-MAGIC_PRIME=2926181
-RANDOM_SEED=1024
+export OMP_NUM_THREADS=1
+export MKL_NUM_THREADS=1
 
-PROJ_DIR="out/L${N_LAYER}-D${N_EMBD}-CTXLEN${CTX_LEN}-TIE${WEIGHT_TYING}-NNCPDATA${NNCP_DATA}-${MODEL_TYPE}"
-DATA_FILE="data/${DATA}_tokens.bin"
+python - <<'PY'
+import sys
+import torch
+
+assert sys.version_info[:3] == (3, 12, 1), sys.version
+assert torch.__version__ == "2.7.0+cu126", torch.__version__
+print(f"Environment verified: {sys.executable} | Python {sys.version.split()[0]} | torch {torch.__version__}")
+PY
+
+export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
+
+RANDOM_SEED=20260817
 
 echo "Using Data File: ${DATA_FILE}"
 echo "Writing init prior to: ${PROJ_DIR}/rwkv-init.pth"
