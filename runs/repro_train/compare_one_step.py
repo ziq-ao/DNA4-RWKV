@@ -26,7 +26,7 @@ sys.path.insert(0, str(REPO_ROOT))
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 os.environ.setdefault("MKL_NUM_THREADS", "1")
 os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
-os.environ.setdefault("RWKV_JIT_ON", "1")
+os.environ["RWKV_JIT_ON"] = "0"
 os.environ.setdefault("RWKV_MY_TESTING", "x070")
 os.environ.setdefault("RWKV_HEAD_SIZE", "64")
 
@@ -121,6 +121,14 @@ def cuda_driver_version():
         return None
 
 
+def output_hash_hook(name, trace):
+    def hook(_module, _inputs, output):
+        tensor = output[0] if isinstance(output, tuple) else output
+        trace["module_outputs"][name] = tensor_hash(name, tensor)
+
+    return hook
+
+
 def main():
     args = parse_args()
     if not torch.cuda.is_available():
@@ -141,7 +149,7 @@ def main():
     torch.backends.cuda.matmul.allow_tf32 = False
 
     from src.dataset import MyDataset_NNCP
-    from src.training.model import RWKV
+    import src.training.model as training_model
 
     dataset_args = model_args()
     dataset_args.data_file = str(args.data_file)
@@ -163,14 +171,54 @@ def main():
     )
     inputs, targets = next(iter(loader))
 
-    model = RWKV(model_args())
+    model = training_model.RWKV(model_args())
     state = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
     model.load_state_dict(state, strict=True)
     model = model.to(device="cuda", dtype=torch.bfloat16).train()
     inputs = inputs.cuda(non_blocking=True)
     targets = targets.cuda(non_blocking=True)
 
-    logits = model(inputs)
+    forward_trace = {"module_outputs": {}, "rwkv_kernel": {}}
+    hook_handles = [model.emb.register_forward_hook(output_hash_hook("emb", forward_trace))]
+    for block_index, block in enumerate(model.blocks):
+        hook_handles.extend(
+            [
+                block.ln1.register_forward_hook(output_hash_hook(f"block_{block_index}.ln1", forward_trace)),
+                block.att.register_forward_hook(output_hash_hook(f"block_{block_index}.att", forward_trace)),
+                block.ln2.register_forward_hook(output_hash_hook(f"block_{block_index}.ln2", forward_trace)),
+                block.ffn.register_forward_hook(output_hash_hook(f"block_{block_index}.ffn", forward_trace)),
+                block.register_forward_hook(output_hash_hook(f"block_{block_index}.output", forward_trace)),
+            ]
+        )
+    hook_handles.extend(
+        [
+            model.ln_out.register_forward_hook(output_hash_hook("ln_out", forward_trace)),
+            model.head.register_forward_hook(output_hash_hook("head", forward_trace)),
+        ]
+    )
+    original_rwkv_kernel = training_model.RUN_CUDA_RWKV7g
+
+    def traced_rwkv_kernel(q, w, k, v, a, b):
+        block_index = len(forward_trace["rwkv_kernel"])
+        kernel_name = f"block_{block_index}"
+        forward_trace["rwkv_kernel"][kernel_name] = {
+            "inputs_sha256": collection_hash(
+                (("q", q), ("w", w), ("k", k), ("v", v), ("a", a), ("b", b))
+            )
+        }
+        output = original_rwkv_kernel(q, w, k, v, a, b)
+        forward_trace["rwkv_kernel"][kernel_name]["output_sha256"] = tensor_hash("output", output)
+        return output
+
+    training_model.RUN_CUDA_RWKV7g = traced_rwkv_kernel
+    try:
+        logits = model(inputs)
+    finally:
+        training_model.RUN_CUDA_RWKV7g = original_rwkv_kernel
+        for hook_handle in hook_handles:
+            hook_handle.remove()
+    if len(forward_trace["rwkv_kernel"]) != len(model.blocks):
+        raise RuntimeError("RWKV kernel trace is incomplete; verify RWKV_JIT_ON is 0.")
     loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1))
     loss.backward()
     torch.cuda.synchronize()
@@ -190,7 +238,7 @@ def main():
         "cuda_driver": cuda_driver_version(),
         "environment": {
             name: os.environ.get(name)
-            for name in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "CUBLAS_WORKSPACE_CONFIG", "TORCH_CUDA_ARCH_LIST")
+            for name in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "CUBLAS_WORKSPACE_CONFIG", "TORCH_CUDA_ARCH_LIST", "RWKV_JIT_ON")
         },
         "deterministic_algorithms": torch.are_deterministic_algorithms_enabled(),
         "seed": args.seed,
@@ -201,6 +249,7 @@ def main():
         "num_workers": args.num_workers,
         "inputs": tensor_summary(inputs),
         "targets": tensor_summary(targets),
+        "forward_trace": forward_trace,
         "logits": tensor_summary(logits),
         "cross_entropy": float(loss.detach().float().item()),
         "logit_samples": [float(logits[index].float().item()) for index in sample_positions],
