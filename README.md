@@ -137,7 +137,7 @@ fine-tuning, and untied input/output weights during adaptation.
 | Decompression time | 9,517 s (2.64 h) |
 | Decompression throughput | 0.1051 MB/s |
 | Peak GPU memory | 17.30 GiB |
-| Hardware | NVIDIA RTX 4090 + Intel Xeon Platinum 8352Y |
+| Hardware | NVIDIA RTX 4090 |
 
 The data-side archive contains the two arithmetic-coded files unchanged and a
 single `zip -9` payload for the remaining auxiliary files:
