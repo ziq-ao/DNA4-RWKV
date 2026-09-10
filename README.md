@@ -120,6 +120,57 @@ Lossless recovery is a separate property: a valid archive must restore the origi
 
 The tested model configuration is RWKV-7 x070 with 5 layers, embedding size 512, vocabulary size 16,384, context length 2,048, and head size 64.
 
+## Verified enwik9 Reference Result
+
+The best verified enwik9 result obtained with this release used pre-training
+initialization seed `24680`, an RWKV-7 x070 L5--D512 prior, a 16,384-token
+vocabulary, context length 2,048, seeded orthogonal rotations, 4-bit NF4
+quantization, weight tying for storage, synchronized online continual
+fine-tuning, and untied input/output weights during adaptation.
+
+| Quantity | Value |
+|---|---:|
+| Input | enwik9, 1,000,000,000 bytes |
+| Data-side archive | 105,485,548 bytes (0.843884 bpb) |
+| Compressed decoder program | 68,812 bytes (0.000551 bpb) |
+| Total, including program | 105,554,360 bytes (0.844435 bpb) |
+| Decompression time | 9,517 s (2.64 h) |
+| Decompression throughput | 0.1051 MB/s |
+| Peak GPU memory | 17.30 GiB |
+| Hardware | NVIDIA RTX 4090 + Intel Xeon Platinum 8352Y |
+
+The data-side archive contains the two arithmetic-coded files unchanged and a
+single `zip -9` payload for the remaining auxiliary files:
+
+| Data-side transmission unit | Bytes | SHA-256 |
+|---|---:|---|
+| `dna4_stream.ac` | 92,589,760 | `ca01e58b71c64433718a5a249b9abac6b4c7b744ca23a86697720e5bb659d4ae` |
+| `dna4_compressed_model.ac` | 12,388,765 | `b8eb0cf2a2e1909d64e69f59187f1c99cb621d70f60556192ce5d1b6a97af20f` |
+| merged `zip -9` auxiliary payload | 507,023 | `62eefae1646d30955cc0110313233b1447b2ce72c3b998061125ee32f3c2a48d` |
+
+The merged auxiliary payload contains the following required files. Their sizes
+and hashes are listed before merging and must not be added to the transmission
+units above:
+
+| Auxiliary file | Bytes before merging | SHA-256 |
+|---|---:|---|
+| `dna4_compressed_model.meta` | 727,414 | `1025c9569f37d7f171e9543874d747b55e6c0c4970f8495951c72765698e70c9` |
+| `nncp.dict` | 186,264 | `950683b44e6c7696f6daa896296365eb54bce8cc05ae15fff7acb5715936a0a1` |
+| `rotation_seeds.pt` | 3,415 | `f67bccae5047e7a83406b4c6c10c908b973bc9587790d70f2c41cb25629fa79d` |
+
+The original and restored raw files both had size 1,000,000,000 bytes and the
+same SHA-256 checksum:
+
+```text
+159b85351e5f76e60cbe32e04c677847a9ecba3adc79addab6f4c6c7aa3744bc
+```
+
+This confirms byte-for-byte lossless restoration. The data-side figure is the
+archive payload used to analyze the coded stream and model cost. The total
+including the compressed decoder program is the benchmark-comparison figure.
+Exact archive bytes can vary with the training and CUDA software environment;
+the listed archive is identified by the component hashes above.
+
 ## 1. Prepare the Preprocessor
 
 The release includes an executable `preprocess`. Try it first:
