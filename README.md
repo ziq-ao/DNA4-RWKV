@@ -134,10 +134,13 @@ fine-tuning, and untied input/output weights during adaptation.
 | Data-side archive | 105,485,548 bytes (0.843884 bpb) |
 | Compressed decoder program | 68,812 bytes (0.000551 bpb) |
 | Total, including program | 105,554,360 bytes (0.844435 bpb) |
+| Training time | 62,661 s (17.41 h) |
+| Compression time | 8,549 s (2.37 h) |
+| Compression throughput | 0.1170 MB/s |
 | Decompression time | 9,517 s (2.64 h) |
 | Decompression throughput | 0.1051 MB/s |
 | Peak GPU memory | 17.30 GiB |
-| Hardware | NVIDIA RTX 4090 |
+| Hardware | NVIDIA RTX 4090 + Intel Xeon Platinum 8352Y |
 
 The data-side archive contains the two arithmetic-coded files unchanged and a
 single `zip -9` payload for the remaining auxiliary files:
